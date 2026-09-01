@@ -30,6 +30,43 @@ void ZigbeeAttribute::set_attr_() {
   }
 }
 
+void ZigbeeAttribute::report_confirm_(
+    ezb_zcl_cmd_cnf_t *cnf,
+    void *user_ctx) {
+
+  auto *self =
+      static_cast<ZigbeeAttribute *>(user_ctx);
+
+  if (self == nullptr) {
+    return;
+  }
+
+  const bool success =
+      cnf != nullptr &&
+      cnf->status == 0;
+
+  self->zb_->report_tx_done(success);
+
+  if (cnf != nullptr) {
+
+    ESP_LOGD(
+      TAG,
+      "Report confirmed: ep=%u cluster=0x%04X tsn=%u status=0x%02X",
+      cnf->src_ep,
+      cnf->cluster_id,
+      cnf->tsn,
+      cnf->status
+    );
+
+  } else {
+
+    ESP_LOGW(
+      TAG,
+      "Report confirmation received without data"
+    );
+  }
+}
+
 void ZigbeeAttribute::report_(bool has_lock) {
   if (!this->report_enabled) {
     return;
@@ -51,10 +88,55 @@ void ZigbeeAttribute::report_(bool has_lock) {
     cmd.cmd_ctrl.src_ep = this->endpoint_id_;
     cmd.cmd_ctrl.cluster_id = this->cluster_id_;
     cmd.cmd_ctrl.fc.manuf_specific = 0;
+
+    // cmd.payload.attr_id = this->attr_id_;
+    // ezb_zcl_report_attr_cmd_req(&cmd);
+    // this->report_requested_ = false;
+
     cmd.payload.attr_id = this->attr_id_;
 
-    ezb_zcl_report_attr_cmd_req(&cmd);
+    // ============================================================
+    // Callback appelé lorsque CETTE commande Zigbee a terminé
+    // sa transmission.
+    // ============================================================
+
+    cmd.cmd_ctrl.cnf_ctx.cb =
+        &ZigbeeAttribute::report_confirm_;
+
+    cmd.cmd_ctrl.cnf_ctx.user_ctx =
+        this;
+
+    // ============================================================
+    // Nous allons maintenant attendre une confirmation.
+    // ============================================================
+
+    this->zb_->report_tx_started();
+
+    // ============================================================
+    // Demande d'émission du report.
+    // ============================================================
+
+    ezb_err_t err =
+        ezb_zcl_report_attr_cmd_req(&cmd);
+
+    // ============================================================
+    // Si la pile refuse immédiatement la commande,
+    // aucun callback ultérieur n'est normalement attendu.
+    // ============================================================
+
+    if (err != EZB_ERR_NONE) {
+
+      ESP_LOGW(
+        TAG,
+        "Failed to queue Zigbee report: error=%d",
+        static_cast<int>(err)
+      );
+
+      this->zb_->report_tx_done(false);
+    }
+
     this->report_requested_ = false;
+
     if (!has_lock) {
       esp_zigbee_lock_release();
     }

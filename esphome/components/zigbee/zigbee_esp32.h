@@ -72,6 +72,61 @@ class ZigbeeComponent final : public Component {
   // True if the device has joined a network and is ready to send and receive messages.
   bool is_joined() { return this->joined_; }
 
+  // ============================================================
+  // Suivi des transmissions des reports Zigbee
+  // MODIF PERSO
+  // ============================================================
+
+  void reset_report_tracking(uint32_t expected) {
+    this->reports_expected_.store(expected);
+    this->reports_started_.store(0);
+    this->reports_done_.store(0);
+    this->reports_failed_.store(0);
+  }
+
+  void report_tx_started() {
+    this->reports_started_.fetch_add(1);
+  }
+
+  void report_tx_done(bool success) {
+    if (!success) {
+      this->reports_failed_.fetch_add(1);
+    }
+
+    this->reports_done_.fetch_add(1);
+  }
+
+  bool reports_complete() const {
+    const uint32_t expected = this->reports_expected_.load();
+
+    return expected > 0 &&
+           this->reports_started_.load() >= expected &&
+           this->reports_done_.load() >= expected;
+  }
+
+  bool reports_successful() const {
+    return this->reports_complete() &&
+           this->reports_failed_.load() == 0;
+  }
+
+  uint32_t reports_expected() const {
+    return this->reports_expected_.load();
+  }
+
+  uint32_t reports_started() const {
+    return this->reports_started_.load();
+  }
+
+  uint32_t reports_done() const {
+    return this->reports_done_.load();
+  }
+
+  uint32_t reports_failed() const {
+    return this->reports_failed_.load();
+  }
+
+  // FIN MODIF PERSO
+
  protected:
   bool sleepy_{false};
   uint32_t keep_alive_{3000};
@@ -115,6 +170,15 @@ class ZigbeeComponent final : public Component {
   std::atomic<bool> joined_ = false;
   std::atomic<bool> join_pending_ = false;
   std::atomic<bool> factory_new_ = false;
+
+  // ============================================================
+  // Compteurs de confirmation des reports
+  // ============================================================
+
+  std::atomic<uint32_t> reports_expected_{0};
+  std::atomic<uint32_t> reports_started_{0};
+  std::atomic<uint32_t> reports_done_{0};
+  std::atomic<uint32_t> reports_failed_{0};
 };
 
 template<typename T>

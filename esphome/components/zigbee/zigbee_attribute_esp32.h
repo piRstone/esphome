@@ -80,6 +80,11 @@ class ZigbeeAttribute final : public Component {
  protected:
   void set_attr_();
   void report_(bool has_lock);
+
+  static void report_confirm_(
+      ezb_zcl_cmd_cnf_t *cnf,
+      void *user_ctx);
+
   ZigbeeComponent *zb_;
   uint8_t endpoint_id_;
   uint16_t cluster_id_;
